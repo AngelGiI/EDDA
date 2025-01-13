@@ -1,0 +1,690 @@
+---
+title: "Experimental Design and Data Analysis: Assignment 2"
+author: "Rick van Ravensberg, Manuel Giurea Scanferla & Ángel Gil, group 64"
+date: "15 March 2023"
+output: pdf_document
+fontsize: 10pt
+highlight: tango
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r,echo=FALSE}
+options(digits=3)
+```
+
+## Exercise 1. Trees
+
+**a)** We begin by generating the ANOVA table without taking diameter
+and height into account:
+
+```{r,echo = FALSE}
+data=read.table(file="Data/treeVolume.txt",header=TRUE)
+
+beech <- subset(data, type == "beech")$volume
+oak <- subset(data, type == "oak")$volume
+
+result <- lm(volume~type,data=data)
+anova(result)
+
+```
+
+The "Pr(\>F)" column shows the p-value associated with the F statistic.
+In this case, the p-value is 0.17, which is greater than the
+significance level of 0.05. Therefore, we fail to reject the null
+hypothesis and conclude that tree type does not influence volume. A
+t-test can be thought of as a special case of ANOVA, where there are
+only two groups being compared. In this case, we have two groups (Beech
+and Oak), so we could perform a two-sample t-test to compare their mean
+volumes.
+
+```{r,echo = FALSE}
+t.test(beech, oak)
+```
+
+The null hypothesis is that the means of the two groups are equal, and
+the alternative hypothesis is that they are not equal and since p-value
+is 0.2, there is not enough evidence to reject the null hypothesis at a
+significance level of 0.05. This confirms the results of the ANOVA test.
+We can then estimate the volumes of the two types of trees by looking at
+their mean:
+
+```{r}
+mean(beech) # mean volume of type beech
+mean(oak) # mean volume of type oak
+```
+
+Lastly, we want to check whether the assumption of normality is not
+totally untrue using a qqnorm plot and plotting the fitted values
+against the residuals:
+
+```{r, fig.margin =  c(0, 0, -5, -5),fig.width=8,fig.height=4, fig.align="center", echo=FALSE}
+par(mfrow=c(1,2)); qqnorm(residuals(result),main = NULL)
+plot(fitted(result),residuals(result))
+```
+
+we can notice that QQ-norm does not follow a straight line, hence we can
+not confirm the normality assumption.
+
+**b)** To investigate whether the influence of diameter and height on
+volume is similar for both tree types (Beech and Oak), we can fit two
+linear regression models.
+
+```{r}
+#pairwise interaction between type and diameter
+mod1 <- lm(volume~height+type*diameter, data=data)
+anova(mod1)
+```
+
+```{r}
+#pairwise interaction between type and height
+mod2 <- lm(volume~diameter+type*height, data=data)
+anova(mod2)
+```
+
+Looking at the p-values, from both models we do not reject the null
+hypothesis and conclude that the effect of diameter and height on volume
+is similar for both tree types. We want now to try and visualize the
+relationship between volume and diameter/height for each tree type:
+
+```{r, fig.margin = TRUE,fig.width=8,fig.height=4,fig.align="center", echo=FALSE}
+
+par(mfrow=c(1,2))
+
+library(ggplot2)
+ggplot(data, aes(x = diameter, y = volume, color = type)) + 
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  ggtitle("Volume vs Diameter") +
+  labs(color = "Tree Type")
+
+ggplot(data, aes(x = height, y = volume, color = type)) + 
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  ggtitle("Volume vs Height") +
+  labs(color = "Tree Type")
+
+```
+
+From the plots, it seems like there may be a different relationship
+between volume and diameter/height for Beech and Oak trees. It appears
+to exist a strong relationship between volume and diameter for both
+trees. Similarly, also between volume and height we can see a
+significant relationship, in this case mostly for beech trees. Let's now
+fit two more linear regression models and compare their coefficients to
+confirm these observations:
+
+```{r}
+# Linear regression model for volume vs diameter for each tree type
+beechModel <- lm(volume ~ diameter, data = data, subset = type == "beech")
+oakModel <- lm(volume ~ diameter, data = data, subset = type == "oak")
+
+# Compare the coefficients
+summary(beechModel)$coefficients
+summary(oakModel)$coefficients
+
+# Linear regression model for volume vs height for each tree type
+beechModel2 <- lm(volume ~ height, data = data, subset = type == "beech")
+oakModel2 <- lm(volume ~ height, data = data, subset = type == "oak")
+
+# Compare the coefficients
+summary(beechModel2)$coefficients
+summary(oakModel2)$coefficients
+```
+
+**c)** Based on the linear regression models, we can see that both
+diameter and height have a positive influence on volume for both tree
+types. We already saw that type does not influence the volume. The
+coefficients for diameter are similar for both tree types, with beech
+having a slightly higher coefficient (5.07) compared to oak (4.74). This
+suggests that diameter has a similar influence on volume for both beech
+and oak trees. The coefficients for height are also positive for both
+tree types, but the magnitudes are different. The beech trees'
+coefficient (1.54) is much higher than that for oak trees (0.31),
+indicating that height has a stronger influence on volume for beech
+trees compared to oak trees. We can also notice it from the previous
+graph. Overall, we see that increasing both height and diameter result
+in an increase in volume, especially diameter for both type of trees. To
+predict the volume for a tree with the overall average diameter and
+height, we need to calculate the mean values for these variables:
+
+```{r,echo = FALSE}
+mean_diameter <- mean(data$diameter)
+mean_height <- mean(data$height)
+
+# Predict volume for beech tree
+mean_volume_beech <- predict(beechModel, data.frame(diameter = mean_diameter, height = mean_height))
+
+# Predict volume for oak tree
+mean_volume_oak <- predict(oakModel, data.frame(diameter = mean_diameter, height = mean_height))
+
+mean_volume_beech
+mean_volume_oak
+```
+
+**d)** Since we know that the formula to calculate the volume of a
+cylinder is $v=\frac{(\pi*d^2*h)}{4}$, we simplify and substitute
+diameter with $diameter^2$ in the model. We also remove type in the
+model, since we already understood that is not significant.
+
+```{r}
+# previous model
+mod3=lm(volume~diameter+height,data=data)
+summary(mod3)
+
+# new model
+data$diam_sq=data$diameter^2
+mod4=lm(volume~diam_sq+height,data=data)
+summary(mod4)
+```
+
+We can confirm that the model with the transformed explanatory variable
+is better. This is indicated by the higher F-value and lower p-value for
+the diam_sq variable compared to the diameter variable in the first
+model. Additionally, the multiple R-squared and adjusted R-squared
+values are higher in the second model, indicating a better fit. Lastly,
+we want to check the assumption of normality to understand if we can
+make valid assumptions from this model:
+
+```{r, fig.margin = c(0, 0, -5, -5),fig.width=8,fig.height=4,fig.align="center", echo=FALSE}
+par(mfrow=c(1,2));par(cex = 0.7); qqnorm(residuals(mod4),main = NULL)
+plot(fitted(mod4),residuals(mod4))
+
+```
+
+We can see that the norm qq-plot follows a straight line and the
+fitted-residual model does not show a pattern. This means that the
+normality is checked and we can draw valid conclusions from the model.
+
+## Exercise 2. Expenditure on criminal activities
+
+```{r, include=FALSE}
+# Read data
+crimedf <- as.data.frame(read.table("data/expensescrime.txt", header=TRUE))
+head(crimedf)
+response <- "expend"
+exp_vars <- c("bad", "crime", "lawyers", "employ", "pop")
+```
+
+**a)** In order to check the pairwise interactions between all the
+variables of interest, we can use scatter plots:
+
+```{r, echo=FALSE, fig.height=5, fig.width=5, fig.align="center"}
+par(cex = 0.8);pairs(crimedf[, c(response, exp_vars)])
+```
+
+After examining the pairs plot, it is evident that there are linear
+relationships among the predictors, namely *bad*, *lawyer*, *employ*,
+and *pop*, which can lead to the issue of collinearity. Moreover, a
+strong positive correlation is observed between the response variable
+expend and the aforementioned predictors, except for *crime*. However,
+there are some outliers present in the higher range of the data, which
+can potentially impact the model's accuracy. The existence of
+collinearity among the predictors is a concern as it can make it
+challenging to estimate the regression coefficients due to redundant
+information.
+
+In order to find influence points, we can use Cook's distance, where a
+distance greater than 1 indicates an outlier:
+
+```{r}
+crimelm <- lm(expend~bad+crime+lawyers+employ+pop, data=crimedf)
+```
+
+```{r, fig.margin = TRUE,fig.width=6,fig.height=3,fig.align="center", echo=FALSE}
+par(cex = 0.8);plot(cooks.distance(crimelm), type='b', ylab="Distance", main = "Cook's distance for expensecrime")
+```
+
+```{r}
+cooks.distance(crimelm)[cooks.distance(crimelm) > 1]
+```
+
+Indices 5, 8, 35 and 44 are thus regarded as influence points and can be
+removed from the data:
+
+```{r}
+Updcrimedf <- crimedf[-c(5,8,35,44),]
+```
+
+Let's now investigate collinearity by examining the correlations between
+all the explanatory variables:
+
+```{r, echo=FALSE}
+knitr::kable(round(cor(crimedf[, c(exp_vars)]), 2), caption = "Correlation coefficients")
+```
+
+The correlation table confirms what was observed in the pairs plot;
+there are strong correlations between the explanatory variables,
+excluding crime. The lowest correlation coefficient is 0.85, between bad
+and lawyers, indicating that all predictors (excluding crime) contain
+comparable information.
+
+We can also use the VIF to see which variables are collinear, where a
+value \>5 is cause for concern:
+
+```{r, echo=FALSE}
+library(car)
+```
+
+```{r}
+vif(lm(expend~bad+crime+lawyers+employ+pop, data=crimedf))
+```
+
+This result also supports that the variables *bad*, *lawyers*, *employ*
+and *pop* are collinear.
+
+**b)** From now on, we will proceed without the influence points.
+
+```{r, include=FALSE}
+library(dplyr)
+```
+
+
+```{r}
+# level 1
+mbad <- lm(expend~bad, data=Updcrimedf); mcrime <- lm(expend~crime, data=Updcrimedf)
+mlawyers <- lm(expend~lawyers, data=Updcrimedf); memploy <- lm(expend~employ, data=Updcrimedf)
+mpop <- lm(expend~pop, data=Updcrimedf)
+l1m <- list(mbad, mcrime, memploy, mlawyers, mpop); 
+var1 <- c("bad", "crime", "employ", "lawyears", "pop")
+Rsquared1 <- c()
+for(m1 in l1m){
+  r_squared <-  summary(m1)$r.squared
+  Rsquared1 <- c(Rsquared1, r_squared)
+}
+knitr::kable(data.frame(Predictor = var1, Rsquared = Rsquared1), 
+             caption = "Step-up: Level 1")
+```
+
+From Table 2, it is deduced that *employ* is the variable to be included
+in the model. Analogously, we obtain Tables 3 and 4 which allow us to
+obtain the best step-up model.
+
+```{r, echo=FALSE}
+
+# level 2
+mbad2 <- lm(expend~employ+bad, data=Updcrimedf); 
+mcrime2 <- lm(expend~employ+crime, data=Updcrimedf)
+mpop2 <- lm(expend~employ+pop, data=Updcrimedf); 
+mlawyers2 <- lm(expend~employ+lawyers, data=Updcrimedf)
+lv2_models <- list(mbad2, mcrime2, mlawyers2, mpop2); 
+variables_2 <- c("employ+bad", "employ+crime", "employ+lawyears", "employ+pop")
+rsq2 <- c()
+significance_2 <- c()
+for(model_1 in lv2_models){
+  is_significant <- sum(c(summary(model_1)$coefficients[,4] < 0.05)) > 2 
+  r_squared <-  summary(model_1)$r.squared
+  rsq2 <- c(rsq2, r_squared)
+  significance_2 <- c(significance_2, is_significant) 
+}
+# level 3
+mbad3 <- lm(expend~employ+crime+bad, data=Updcrimedf);
+mpop3 <- lm(expend~employ+crime+pop, data=Updcrimedf);
+mlawyers3 <- lm(expend~employ+crime+lawyers, data=Updcrimedf);
+lv3_models <- list(mbad3, mlawyers3, mpop3); 
+variables_3 <- c("employ+crime+bad", "employ+crime+lawyers", "employ+crime+pop")
+rsq3 <- c()
+significance_3 <- c()
+for(model_1 in lv3_models){
+  is_significant <- sum(c(summary(model_1)$coefficients[,4] < 0.05)) > 3 
+  r_squared <-  summary(model_1)$r.squared
+  rsq3 <- c(rsq3, r_squared)
+  significance_3 <- c(significance_3, is_significant) 
+}
+par(mfrow=c(1,2)); knitr::kable(data.frame(Predictor = variables_2, r.squared = rsq2, 
+  Significant = significance_2), caption = "Step-up: Level 2")
+knitr::kable(data.frame(Predictor = variables_3, r.squared = rsq3, 
+  Significant = significance_3), caption = "Step-up: Level 3")
+```
+
+The variables added in order were *employ*, *crime* and *pop*, after
+which no further added variables had significant p-values (notice that
+we omitted the last level). Hence the final model is as follows:
+
+```{r}
+mstepup <- lm(expend~employ+crime+pop, data=Updcrimedf)
+summary(mstepup)
+```
+
+Step-up final model: expend = -247 + 0.0209\*employ + 0.0543\*crime +
+0.0714\*pop $\pm$ error, with $R^2 = 0.974$. We can check VIF for
+further insight:
+
+```{r}
+vif(mstepup)
+```
+
+Although the step-up method naturally removes collinearity and produced
+a better model than the one obtained in *a)*, which had an R-squared
+value of 0.957, there is still a high VIF value for *employ* and *pop*.
+
+Finally, we check the model assumptions:
+
+```{r, fig.margin = c(0, 0, -5, -5),fig.width=7,fig.height=3.5,fig.align="center", echo=FALSE}
+par(mfrow=c(1,2));par(cex = 0.7);
+qqnorm(residuals(mstepup),main=NULL)
+plot(fitted(mstepup), residuals(mstepup))
+```
+
+We can assume normality, although it is worth addressing that the qq
+plot makes small curved groups of points.
+
+**c)** Using the step-up model from the previous case, the 95%
+prediction interval for *expend* is given by:
+
+```{r}
+newdata <- data.frame(bad=50, crime=5000, lawyers=5000, employ=5000, pop=5000)
+predict(mstepup, newdata, interval="prediction")
+```
+
+One way to improve this interval would be by transforming the existing
+variables to better capture their relationship with the response
+variable. However, this would require additional analysis and
+experimentation. Moreover, we already removed the outliers and the
+inclusion of more variables in the model is not recommended, since we
+already tested that there are no significant variables to add.
+
+**d)** Let's apply the LASSO method:
+
+```{r, include=FALSE}
+# install.packages("glmnet", repos = "https://cran.us.r-project.org")
+library(glmnet)
+```
+
+```{r}
+x <- as.matrix(Updcrimedf[, exp_vars])
+y <- as.matrix(Updcrimedf[, c(response)])
+train <- (sample(1:nrow(x), 0.67*nrow(x))) # train by using 2/3 of the data
+x.train <- x[train,]; y.train <- y[train]  # data to train
+x.test <- x[-train,]; y.test <- y[-train]  # data to test the prediction quality
+mlasso <- glmnet(x.train, y.train, alpha=1)
+cvlasso <- cv.glmnet(x.train,y.train,alpha=1,type.measure='mse')
+```
+
+```{r,fig.width=6,fig.height=3,fig.align="center"}
+plot(mlasso, label=T, xvar="lambda")  # visualization of the lasso path
+```
+
+```{r,fig.width=6,fig.height=3,fig.align="center"}
+plot(cvlasso) # the best lambda by cross-validation
+```
+
+```{r}
+(lambda.1se <- cvlasso$lambda.1se) #  lambda for most regularized model
+```
+
+Let's now asses the performance of the model built using Lasso
+regression.
+
+```{r}
+assess.glmnet(mlasso, newx = x.test, newy = y.test, s=cvlasso$lambda.1se)
+```
+
+In order to compare this model to the step-up model from (b), we find
+the MSE for the latter:
+
+```{r}
+newdata <- data.frame(x.test)
+y.pred <- predict(mstepup, newdata, interval="confidence", level=0.95)
+msestepup <- mean((y.test - y.pred)^2); msestepup
+```
+
+After several runs (of the Lasso method), we can conclude that the
+step-up model outperforms it consistently in this case (20 out of 20
+tries, but we did not keep track), producing a smaller MSE. This could
+happen because LASSO is better suited to situations with many more
+explanatory variables.
+
+## Exercise 3. Titanic
+
+**a)** To get a better understanding we visualized several elements from
+the data. First, we were interested in the number of people per class.
+It appears that the third class is relatively large and the first and
+second class are about equal size. Then we visualized the effect of age
+and sex on survival rate. The figure shows that the average age of
+surviving men is lower than the average age of the men that did not
+survive, this indicates a positive effect of age survival rate. However,
+females show the opposite effect, disputing the previous indication.
+Some of the data points missed the age column, these values were
+replaced with the average age.
+
+```{r, echo=FALSE,fig.width=6,fig.height=3,fig.align="center"}
+titanicdata = read.table(file="Data/titanic.txt", header=TRUE)
+
+pclassfreq <- table(titanicdata$PClass)
+barplot(pclassfreq, main = "Passengers per Class")
+```
+
+```{r, echo=FALSE,fig.width=6,fig.height=4}
+par(cex = 0.8);boxplot(Age ~ Survived + Sex,
+        data = titanicdata,
+        col = rainbow(2, s = 0.5),
+        notch = TRUE,
+        main = "Age Distribution",
+        names = c("F - D", "F - S", "M - D", "M - S"),
+        xaxs = FALSE
+)
+legend("topleft", fill = rainbow(2, s = 0.5), legend = c("Diseased", "Survived"))
+```
+
+A logistic regression model was created to investigate the association
+between the survival status and the predictors *PClass*, *Age* and
+*Sex*, according to code in Listing 6. The estimated odds is calculated
+as follows:
+
+$$
+\hat{o}_k = \frac{Pr(Y_k = 1)}{Pr(Y_k = 0)} = exp\{ 3.76 -1.29 Class2_k -2.52 Class3_k -0.039177 Age_k -2.63 SexMale_k \}
+$$
+
+First of all, we see that age does not strongly effect the survival
+rate. Next, we observe a relatively high negative value for being a
+third class passenger, this indicates that traveling in third class
+negatively effects survival rate. The parameter for second class
+passengers also shows a negative influence on the survival rate, but the
+effect is not as strong as for the third class passengers. Finally, we
+see that being a male also has a strong negative effect on the
+probability of survival.
+
+```{r}
+titanicmodel = glm(Survived ~ PClass + Age + Sex, data=titanicdata, family=binomial)
+summary(titanicmodel)
+```
+
+**b)** The following different models were used to investigate the
+interaction between different predictors. All models use a null
+hypothesis $H_0 : \beta_{Age} = \beta_{Class}$ and a significance level $\alpha = 0.05$.
+
+```{r}
+modelAgePClass = glm(Survived ~ Age * PClass, data=titanicdata, family=binomial)
+anova(modelAgePClass, test="Chisq")
+    
+modelAgeSex = glm(Survived ~ Age * Sex, data=titanicdata, family=binomial)
+anova(modelAgeSex, test="Chisq")
+```
+
+The first model, which models the interaction between *Age* and *Class*,
+returns a p-value of 0.558. This does not reject *H*~0~, meaning that
+there is no interaction between predictor *Age* and factor *Class*. The
+second model on the interaction between *Age* and *Sex* returns p \<
+0.001. This value rejects our *H*~0~, which means that the two predictors
+interact.
+
+From this point, we work with a model that uses the *PClass* predictor,
+but it also integrates the fact that *Age* and *Sex* interact.
+
+```{r}
+modelFinal = glm(Survived ~ PClass + Age * PClass, data=titanicdata, family=binomial)
+anova(modelFinal, test="Chisq")
+```
+
+The estimate of the probability of survival for each combination of
+levels of the factors *Class* and *Sex* for a person of age 53 can be
+found in the following table.
+
+|         | Male      | Female    |
+|---------|-----------|-----------|
+| Class 1 | 0.5358867 | 0.7119470 |
+| Class 2 | 0.5115599 | 0.6754746 |
+| Class 3 | 0.5035067 | 0.6097319 |
+
+: Probability of survival for each combination of levels of the factors
+Class and Sex for a person of age 53
+
+```{r}
+titanicdata$PClass = factor(titanicdata$PClass)
+titanicdata$Sex = factor(titanicdata$Sex)
+
+summary(modelFinal)
+
+m_names = list(c("Class1", "Class2","Class3"),c("Male", "Female"))
+results = matrix(, nrow=3, ncol=2, dimnames=m_names)
+
+classLabels = c("1st", "2nd", "3rd")
+genderLabels = c("male", "female")
+for (i in seq_along(classLabels)) {
+  for (j in seq_along(genderLabels)) {
+    newData = data.frame(Age=53, Sex=genderLabels[j], PClass=classLabels[i])
+    x = predict(modelFinal, newData, type="response")
+    results[i, j] = 1/(1 + exp(-x))
+  }
+}
+```
+
+**c)** The second approach is not wrong, contingency tables should
+produce the similar conclusions as the logistic regression model. The
+logistic regression model is a rather complex model, it does not only
+test for predictor interaction, but it also creates a model which can be
+used for prediction. So the logistic regression model is more versatile
+than the contingency table. The complexity of the model can also be
+considered as a disadvantage, as it is less intuitive to interpret.
+
+We propose to split the data into a training and a test set to assess
+the performance of our predictor. The algorithm can use the training set
+to train the model, i.e. it tries to find the optimal parameters. The
+test set contains data points which the model has never seen before,
+these data points are used to assess the performance of the model. If
+the model is able to accurately predict the survival on unseen data,
+then we can conclude that the model generalizes the data well.
+
+**d)** We created contingency tables to investigate whether factor
+passenger class has an effect on the survival status, see Table 6. The
+built-in function `chisq.test(classTable)` shows a result of p \< 0.001,
+indicating that passenger class and survival are dependent.
+
+|          | Class 1 | Class 2 | Class 3 |
+|----------|---------|---------|---------|
+| Survived | 193     | 119     | 138     |
+| Deceased | 129     | 161     | 573     |
+
+: Number of passengers per class against survival
+
+A similar thing was done for the factor gender, see Table 7. Because
+this is a 2x2 table, we can use the Fisher's exact test. This is a
+built-in function in R, `fisher.test(genderTable)`, it also reports a
+result of p \< 0.001, thus the gender and survival rate are also
+dependent.
+
+|          | Male | Female |
+|----------|------|--------|
+| Survived | 142  | 308    |
+| Deceased | 709  | 154    |
+
+: Number of passengers per gender against survival
+
+**e)** The second approach is not wrong, contingency tables should
+produce the similar conclusions as the logistic regression model. The
+logistic regression model is a rather complex model, it does not only
+test for predictor interaction, but it also creates a model which can be
+used for prediction. So the logistic regression model is more versatile
+than the contingency table. The complexity of the model can also be
+considered as a disadvantage, as it is less intuitive to interpret.
+
+## Exercise 4. Military coups
+
+**a)** All variables of the coups data set were loaded in a Poisson GLM,
+using the following procedure.
+
+```{r}
+coupsdata=read.table(file="Data/coups.txt", header=TRUE)
+coupsglm=glm(miltcoup ~ oligarchy + pollib + parties +
+               pctvote + popn + size +numelec + numregim,
+    family=poisson,
+    data=coupsdata )
+summary(coupsglm)
+```
+
+These results indicate that the military coups are significantly
+predicted by 3 factors: *oligarchy*, *pollib* and *parties*.
+
+1.  The number of years the country is ruled by a military oligarchy has
+    a positive effect on the number of military coups; an increase in
+    years of military oligarchy predicts an increase in military coups.
+
+2.  The political liberalization level has a negative effect on the
+    number of military coups; the fewer civil rights a country has, the
+    number of coups increases.
+
+3.  The number of political parties has a positive effect on the number
+    of military coups; as such that when a country has more political
+    parties, a greater number of military coups can be expected.
+
+All other variables in the model didn't have a significant effect on the
+number of military coups.
+
+**b)** The number of exploratory variables in the former Poisson
+regression was reduced by removing the variable that has the highest
+P-value in the model. This procedure was repeated until all variables in
+the model are significant. The following variables were successively
+removed from the model: *numelec*, *numregim*, *size*, *popn*,
+*pctvote*. The final model contains the following explanatory variables:
+*oligarchy*, *pollib*, *parties*.
+
+```{r}
+coupsglm5 <- step(coupsglm, direction = "backward", trace = FALSE, family ="poisson")
+summary(coupsglm5)
+```
+
+While in the full model *oligarchy* was barely significant with a value
+of *p* = 0.034, in the reduced model this variable has a very small
+p-value (*p* \< 0.001), which indicates that the presence of an oligarchy
+is a valid predictor of a military coup. The predictive value of the
+number of political parties in a country reduced in significance. The
+political liberalization level remained similar in significance.
+
+**c)** Using the model from the previous section, the number of coups
+can be predict for each of the levels of political liberalization. For
+the variables *oligarchy* and *parties* averages were calculated and fed
+into the model, respectively 5.222 and 17.083.
+
+```{r}
+# Level 0 No civil rights for political expression
+pollib0 = data.frame(
+    pollib=0,
+    oligarchy=mean(coupsdata[,'oligarchy']),
+    parties=mean(coupsdata[,'parties'])
+)
+predict(coupsglm5, newdata=pollib0, type="response")
+
+# Level 1 Limited civil rights for expression
+pollib1 = data.frame(
+    pollib=1,
+    oligarchy=mean(coupsdata[,'oligarchy']),
+    parties=mean(coupsdata[,'parties'])
+)
+predict(coupsglm5, newdata=pollib1, type="response")
+
+# Level 2 Full civil rights
+pollib2 = data.frame(
+    pollib=2,
+    oligarchy=mean(coupsdata[,'oligarchy']),
+    parties=mean(coupsdata[,'parties'])
+)
+predict(coupsglm5, newdata=pollib2, type="response")
+```
+
+From these predictions can be concluded that more military coups are
+expected if less civil rights are granted in the average African
+country. When no civil rights exist, the predicted number of coups is a
+little over 3, while with full civil rights, the predicted number is
+just a little under 1.

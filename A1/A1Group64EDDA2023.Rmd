@@ -1,0 +1,399 @@
+---
+title: "Experimental Design and Data Analysis: Assignment 1"
+author: "Rick van Ravensberg, Manuel Giurea Scanferla & Ángel Gil, group 64"
+date: "27 February 2023"
+output: pdf_document
+fontsize: 11pt
+highlight: tango
+---
+
+`r options(digits=3)`
+
+## Exercise 1. Birthweights
+
+**a)** Lets start, as usual, by visualizing the data with a histogram and a QQ-plot.
+
+```{r,echo = FALSE,fig.margin = TRUE,fig.width=8,fig.height=4,fig.align="center"}
+options(digits=3)
+data=read.table(file="birthweight.txt",header=TRUE)
+obs = data[,1]
+par(mfrow=c(1,2))
+n=length(obs)
+mu=mean(obs)
+sig=sd(obs)
+u=seq(0,5000,0.1)
+v=dnorm(u,mu,sig)
+hist(obs,probability = TRUE,main = "Histogram of birthweights",xlab="Weights (gr)");lines(u,v,col="red")
+qqnorm(obs);qqline(obs,col="red",lty = 2,lwd=2)
+```
+
+The data is clearly normally distributed. Nevertheless, we performed Shapiro-Wilk test to double check and obtained a p-value of `r shapiro.test(obs)$p.value`, which indicates that H0 - the data is normally distributed - should not be rejected. Since we have n=`r n` observations, of mean=`r mu` and sd=`r sig`, the 96% CI is computed as follows:
+
+```{r}
+margin <- qt(0.98,df=n-1)*sig/sqrt(n) # alpha = 0.04 -> we have a t-alpha/2 with
+                                     # n-1 degrees of freedom
+CI <- c(mu - margin, mu + margin)
+```
+
+and we obtain CI=[`r CI`]. In order to narrow this interval down to a length of 100, we use the formula $\sqrt{n}\geq\frac{z_{\alpha/2}\cdot s}{E}$ where E=50 - note that we use Z instead of t, because t depends on (unknown) n as well. By resolving the equation, it is derived that the number of observation must be, at least, `r ceiling((qnorm(0.98)**2*sig**2/50**2))`. Lets compute a bootstrap 96%-CI for mu:
+
+```{r}
+B <- 1000
+Tstar <- numeric(B)
+for(i in 1:B) {
+Xstar <- sample(obs,replace=TRUE)
+Tstar[i] <- mean(Xstar) }
+Tstar02 <- quantile(Tstar,0.02)
+Tstar98 <- quantile(Tstar,0.98)
+bootCI <- c(2*mu-Tstar98,2*mu-Tstar02)
+```
+
+And we now obtain bootCI=[`r bootCI`] vs [`r CI`] of the previous case. As we can see, the difference in length (`r abs(CI[2] - CI[1] - (bootCI[2] - bootCI[1]))`) is very small and the extremes of the intervals are really close.
+
+**b)** In order to verify the claim that the mean birthweight is bigger than 2800 gram, we need to compare the sample mean of birthweights to the null hypothesis value mu0 = 2800.
+
+```{r}
+mu0 <- 2800; alpha <- 0.05
+
+# Perform one-sample t-test
+t.test(obs, mu = mu0, alternative = "greater", conf.level = 1-alpha)
+```
+
+The T-test tells us that the evidence in favor of $H1: mu > 2800$ suffices to reject $H0: mu = 2800$. This is indicated by 1) the p-value=`r t.test(obs, mu = mu0, alternative = "greater", conf.level = 1-alpha)$p.value`, lesser than 0.05, 2) the CI= [`r t.test(obs, mu = mu0, alternative = "greater", conf.level = 1-alpha)$conf.int`], for which the lower bound is greater than mu0 and there is no upper bound (i.e. the bound is Infinite) or even by 3) t, as $|t|=2.227>|t_{\alpha/2}|=$ `r qt(0.975, 187)`.
+
+The CI is unbounded because we have a one-sided t-test, where we want to verify whether the true mean is greater than 2800 or not. In this case, we only have a specific value for the lower bound of the acceptance region since this value sets the threshold for accepting/denying our hypothesis, the possible value of the upper bound is negligible for the case at hand.
+
+A suitable sign test for this problem would be the following:
+
+```{r}
+binom.test(sum(obs>2800),188,p=0.5, alternative = "greater")
+```
+
+107 out of the 188 birthweights are greater than 2800. The sign test also indicates that H0 is to be rejected (p-value = `r binom.test(sum(obs>2800),188,p=0.5, alternative = "greater")$p.value`) and thus we can assume (with 95% confidence) that the median of the population is greater than 2800.
+
+**c)** To compute the power of a hypothesis test, we need to specify the alternative hypothesis and the effect size, which is the difference between the null hypothesis value and the true population parameter. In this case, the alternative hypothesis is that the mean is greater than 2800 grams, and we can assume a true population mean of, for example, 2810 grams, giving an effect size of 10 grams. Lets compare the power of the two tests by simulation:
+
+```{r}
+B <- 1000
+psign <- numeric(B)  ## will contain p-values of sign test
+pttest <- numeric(B) ## will contain p-values of t-test
+for(i in 1:B) {
+x = rnorm(n,mean=2810,sig/sqrt(n)) ## generate data under H1 with mean=2900 and 
+                                   ## the sd derived from the observations (optional)
+psign[i] <- binom.test(sum(x>2800),n,p=0.5)[[3]] ## extract p-value
+pttest[i] <- t.test(x,mu=2800)[[3]]} ## extract p-value
+sum(psign<0.05)/B; sum(pttest<0.05)/B
+```
+
+T-test is preferred because it has higher power, which indicates more confidence that there will not be a Type II error. We decided to assign x an sd of $\sigma/\sqrt(n)$ because following the TCL it is the best estimation we can make of its true value. As an additional comment, the power of the tests rapidly increases as we increase the assumed true population mean.
+
+**d)** Using asymptotic normality and computing the point estimate $\hat{p}$, we can obtain the confidence interval as $\hat{p}\pm z_{\alpha/2}\sqrt\frac{\hat{p}(1-\hat{p})}{n}$. If we substitute in the formula for the lower bound $\hat{p}_l=0.25$ we can obtain the value of Z. With this value we can deduce the upper bound and the confidence level of the interval that the expert computed.
+
+```{r}
+p_hat = sum(obs<2600)/n
+se = sqrt(p_hat * (1 - p_hat) / n)
+
+# Now we have everything we need to solve the equation
+z_val = (p_hat - 0.25) / se
+
+# Upper bound (p_r) and confidence level
+p_r = p_hat + z_val * se
+cl = pnorm(z_val)
+```
+
+The obtained z-value is `r z_val`. Then, the `r round(cl*100, 2)`% confidence interval for the probability that the weight of a newborn baby is less than 2600 grams is [0.25,`r round(p_r, 3)`].
+
+**e)** We now want to test whether the mean weight is different for male and female babies. The null hypothesis $H_0$ is that there is no difference in means and our data consists of 34 male and 28 female babies who weighted less than 2600 grams, and 61 male and 65 female babies who weighted at least 2600 grams. In other words, we want to test a difference in proportions where $\hat{p}_m=\frac{34}{95}$ and $\hat{p}_f=\frac{28}{93}$.
+
+```{r}
+prop.test(c(34,28),c(95,93))
+```
+
+Therefore, there is not enough evidence to support the claim that there is a difference in means (e.g. p-value= `r prop.test(c(34,28),c(95,93))$p.value` \> 0.05).
+
+## Exercise 2. Cholesterol
+
+**a)** We begin the analysis by summarizing the data statistics contained in the data set, which gives us the following output:
+
+```{r,echo = FALSE}
+data=read.table(file="cholesterol.txt",header=TRUE)
+```
+
+```{r}
+summary(data)
+```
+
+From the summary statistics, we can see that the mean cholesterol level decreased from 6.41 before the diet to 5.78 after 8 weeks on the diet. Moreover, the data ranges from 3.91 to 8.43 before the diet, and from 3.66 to 7.67 after 8 weeks. This is our first hint of correlation between the two columns. We can also create a scatterplot of the data to visualize the relationship between the Before and After8weeks columns, obtaining the following plot:
+
+```{r,echo = FALSE, fig.margin = TRUE,fig.width=4,fig.height=4,fig.align="center"}
+plot(data$Before, data$After8weeks, xlab="Before", ylab="After8weeks")
+```
+
+We can clearly see an almost linear relation between the two columns, confirming again the possibility of a correlation. We then calculate the correlation coefficient and obtain:
+
+```{r}
+cor(data$Before, data$After8weeks)
+```
+
+Indicating a strong positive correlation between the Before and After8weeks columns.
+
+To check for normality we can create an histogram, a QQ-plot and a boxplot for the two columns:
+
+```{r, fig.margin = TRUE,fig.width=8,fig.height=4,fig.align="center"}
+before = data[,1] # Before column
+after = data[,2] # After8weeks column
+
+par(mfrow=c(1,3))
+hist(before); qqnorm(before);qqline(before,col="red",lty = 2,lwd=2); boxplot(before)
+hist(after); qqnorm(after);qqline(after,col="red",lty = 2,lwd=2); boxplot(after)
+```
+
+For both columns we can assume normality. However, in the QQ-plots there are some inconsistencies or deviations from the straight line, especially at the tails, which may be due to the presence of outliers. We can have a confirmation of the presence of these outliers by looking at the tails of the two boxplots.
+
+**b)** Since the same individuals were measured for cholesterol levels before and after the diet, the data is paired. Therefore, we can use paired sample tests to verify whether the diet with low fat margarine has an effect. Two relevant tests that can be used for paired data are the paired t-test and the signed test (chosen because the Wilcoxon signed rank test is less robust to outliers).
+
+1.  The paired t-test assumes that the differences between the paired samples follow a normal distribution:
+
+```{r}
+t.test(data$Before, data$After8weeks, paired=TRUE)
+```
+
+The paired t-test shows that the difference in mean cholesterol levels before and after the diet is statistically significant, so we reject the null hypothesis. Recall that we assumed normality of the data. We check the normality assumption on the differences:
+
+```{r, fig.margin = TRUE,fig.width=8,fig.height=4,fig.align="center"}
+par(mfrow=c(1,2))
+hist(before-after); qqnorm(before-after);qqline(before-after,col="red",lty = 2,lwd=2);
+```
+
+From the plots we can conclude that there is no reason to suspect that the differences are not taken from a normal population.
+
+2.  The sign test can also be used when the data follows a normal distribution. It calculates the number of positive and negative differences between the paired samples and tests whether there is a significant difference between them:
+
+```{r, fig.margin = TRUE,fig.width=9,fig.height=4.5,fig.align="center"}
+binom.test(sum(data$Before - data$After8weeks > 0), nrow(data), p=0.5)
+```
+
+The binomial test suggests that there is strong evidence to reject the null hypothesis and conclude that there is a difference in "Before" and "After8weeks" values, with the probability of success being very high. Specifically, all individuals in the sample showed an improvement in their "After8weeks" value compared to their "Before" value.
+
+Since the data is paired, a permutation test can also be applicable:
+
+```{r, fig.margin = TRUE,fig.width=6,fig.height=3,fig.align="center"}
+mystat=function(x,y) {mean(x-y)}
+B=1000; tstar=numeric(B)
+for (i in 1:B) {beafstar=t(apply(cbind(before,after),1,sample))
+                tstar[i]=mystat(beafstar[,1],beafstar[,2])}
+myt=mystat(before,after)
+hist(tstar);lines(rep(myt,2),c(0,20),col="red",lwd=2)
+
+pl=sum(tstar<myt)/B # permutations with test statistic < observed test statistic
+pr=sum(tstar>myt)/B # permutations with test statistic > observed test statistic
+p=2*min(pl,pr) # two-sided p-value by doubling the minimum of pl and pr
+p
+```
+
+We obtain a p-value of 0 every time, - although in fact it approaches 0 instead of being 0, we assume we would need a much higher number of simulations to obtain a nonzero value given the p-value of 3e-11 obtained during the t-test - meaning that we reject the null hypothesis and conclude that there is evidence of a difference between the two groups.
+
+**c)** Given that X1,...,X18 are random variables uniformly distributed on [3, $\theta$], we can use the sample mean and variance to estimate the population parameters. The mean of a uniform distribution Unif[a,b] is given by the average of the endpoints, (a+b)/2. So, the population mean of the observations is (3+$\theta$)/2. The variance of a uniform distribution Unif[a,b] is given by (b-a)\^2/12. So, we obtain (($\theta$-3)\^2)/12. By the CLT, the distribution of the sample mean approaches a normal distribution as the sample size increases. So, we can estimate $\theta$ by the sample mean and construct $CI_\theta$ using the sample mean and standard error.
+
+```{r, fig.margin = TRUE,fig.width=9,fig.height=4.5,fig.align="center"}
+m = mean(data$After8weeks) # mean
+s = sd(data$After8weeks) # standard deviation
+se = s/sqrt(length(data$After8weeks)) # standard error
+```
+
+From where m=`r m`, s=`r s` and se=`r se`. A 95% confidence interval for $\theta$ can be constructed as follows:
+
+```{r, fig.margin = TRUE,fig.width=9,fig.height=4.5,fig.align="center"}
+CI = c(m - 1.96*se, m + 1.96*se) # Estimate ±1.96×SE gives an approx. 95% CI.
+```
+
+So the 95% confidence interval for $\theta$ is [`r CI[1]`, `r CI[2]`]. We could improve this CI if we lowered the confidence level (i.e. greater alpha) which is undesirable because it would compromise the quality of the experiment. Another way to improve this CI would through rising the number of observations.
+
+**d)** We implement the bootstrap test as follows, finding the largest interval of theta values for which the null hypothesis is not rejected:
+
+```{r, fig.margin = TRUE,fig.width=9,fig.height=4.5,fig.align="center"}
+T=function(x) {max(x)}
+t=T(after);B=1000;tstar=numeric(B)
+
+for (i in 1:B) {
+  xstar=sample(after, replace=TRUE) # with replacement
+  tstar[i]=T(xstar)
+}
+
+p.value=mean(xstar >= t)
+
+alpha=0.05 # significance level
+
+for (theta in seq(3, 12, by=0.1)) {
+  if (max(after) <= theta) {
+    p.value=mean(tstar >= max(after))
+    if (p.value > alpha) {
+      break
+    }
+  }
+}
+
+round(theta-0.1, 1)
+```
+
+The largest interval of theta values for which the null hypothesis is not rejected is [3, 7.6].
+
+The Kolmogorov-Smirnov test could be applied by, for example, generating Y1,...,Y18\~Uniform[3,$\theta$] and comparing these values with our observations. Nevertheless, 18 observations are rather sparse and the result of the test is subject to variability so it would be recommended to run the test multiple times for each $\theta$.
+
+**e)** To verify whether the median cholesterol level after 8 weeks of low fat diet is less than 6, we can use the Wilcoxon signed rank test with $H_0:median\geq6$ (i.e. one-sided, $H_1:median<6$).
+
+```{r, fig.margin = TRUE,fig.width=9,fig.height=4.5,fig.align="center"}
+wilcox.test(after, mu = 6, alt = "l") 
+```
+
+Since the p-value is greater than the significance level of 0.05, we cannot reject the null hypothesis, so we can't conclude that the median cholesterol level after the diet is indeed \< 6. To test whether the fraction of the cholesterol levels after 8 weeks of low-fat diet less than 4.5 is at most 25%, we can use a binomial test:
+
+```{r, fig.margin = TRUE,fig.width=9,fig.height=4.5,fig.align="center"}
+binom.test(sum(after<4.5), 18, p = 0.25, alt = "l")
+```
+
+The output shows that the p-value is more than the significance level of 0.05. Therefore, there is not enough evidence to reject the null hypothesis that the true probability of success is at least 0.25.
+
+## Exercise 3. Diet
+
+```{r}
+diet = read.table("diet.txt", header=TRUE)
+diet$diet <- as.factor(diet$diet)
+diet$gender <- as.factor(diet$gender)
+diet$weight.lost <- diet$preweight - diet$weight6weeks
+```
+
+**a)** Since `weight.lost` is combines the variables `preweight` and `weight6weeks`, we can infer that both measurements are normally distributed if `weight.lost` shows a normal distribution. Inspection of the Q-Q plot indicates that the calculated `weight.lost` data is in fact normally distributed. Therefore, we can assume a normal distribution of the data set.
+
+Further inspection of the scatter plot and box plots indicate that all diet types resulted in some measurable weight loss after 6 weeks.
+
+```{r}
+qqnorm(diet$weight.lost)
+plot(preweight~weight6weeks, pch=as.numeric(diet), data=diet); abline(0,1)
+boxplot(diet$weight.lost ~ diet$diet, names=c("diet1", "diet2", "diet3"))
+```
+
+A paired samples t-test between the `preweight` (*M* = 72.52, *SD* = 8.72) and `weight6weeks` (*M* = 68.68, *SD* = 8.92) variables showed a significant difference (M diff = 3.845) in weight 6 weeks after the start of the treatment (*t*(77) = 13.31, *p* = \< 0.001).
+
+```{r}
+mean(diet$preweight)
+sd(diet$preweight)
+mean(diet$weight6weeks)
+sd(diet$weight6weeks)
+t.test(diet$preweight, diet$weight6weeks, paired=TRUE)
+```
+
+**b)** The one-way ANOVA indicates that there is a significant effect of diet type on lost weight, with diet 3 being the best performer (mean difference is `3.300 + 1.848 = 5.148`). While technically possible, it would be inadvisable to apply the Kruskal-Wallis test on this data, because it has been established that the data likely follows a normal distribution. As such, it is not expected that the Kruskal-Wallis test would yield better results than the one-way ANOVA.
+
+```{r}
+dietlmone = lm(diet$weight.lost ~ diet$diet)
+anova(dietlmone)
+summary(dietlmone)
+```
+
+**c)** A two-way ANOVA test revealed that there is a significant interaction between gender and diet (*F(2, 70)* = 3.153, *p* = .048), but not between gender and weight loss. In common parlance this can be interpreted that there is a difference in performance of some diets depending on the gender.
+
+2 entries contained a missing value for gender, which were omitted from further analysis.
+
+```{r}
+dietlmtwo = lm(diet$weight.lost ~ diet$diet*diet$gender, na.action=na.omit)
+anova(dietlmtwo)
+
+```
+
+**d)** Dropped
+
+**e)** The preferred approach is the one-way anova, because gender did not have a significant effect on weight loss. While a significant interaction with diet was measured, we deem it irrelevant for this study; which focuses primarily on the effect of diet on weight loss, and not so much on efficacy of diet choice between genders. Including gender would unnecessarily complicate further analysis, especially since there is no significant effect of gender on weight loss directly. Furthermore, the one-way ANOVA yielded a smaller *p*-value that the two-way ANOVA, providing more confidence in the accuracy of that that.
+
+Predicted weight loss per diet type:
+
+-   Diet 1: `3.300`
+
+-   Diet 2: `3.300 - 0.027 = 3.263`
+
+-   Diet 3: `3.300 + 1.848 = 5.148`
+
+## Exercise 4. Yield of peas
+
+```{r,echo=FALSE}
+library(MASS)
+data(npk)
+```
+
+**a)**
+
+```{r}
+blocks = 6
+additives = 3
+df <- npk[2:4]   # we will work with this slice of the data
+
+for (i in 1:blocks*additives){
+for (j in 1:additives){
+  df[i,j] = 0}}  # sets all additives to 0
+
+for (i in 1:blocks){
+for (j in 1:additives){
+  smple = sample(c(1,2,3,4), size=2, replace=F) # random selection of plots
+for (k in smple){
+  y = j
+  x = (i*4-4)+k    # convert location from plot to data
+  df[x,y] = 1}}}   # set additive to 1
+```
+
+**b)** To make a plot of the average yield per block for the soil treated with nitrogen and for the soil that did not receive nitrogen, we first need to calculate the average yield for each combination of nitrogen and block. We can use the aggregate function in R to do this:
+
+```{r}
+npk_agg <- aggregate(yield ~ block + N, data = npk, mean)
+```
+
+This creates a new data frame npk_agg with three columns: block, N, and yield, where yield is the average yield for each combination of block and N. We can then create a bar plot of the average yield for each block, with separate bars for nitrogen and no nitrogen, using ggplot2:
+
+```{r}
+library(ggplot2)
+ggplot(npk_agg, aes(x = block, y = yield, fill = factor(N))) + 
+  geom_bar(stat = "identity", position = "dodge") + 
+  labs(x = "Block", y = "Average Yield", fill = "Nitrogen")
+```
+
+We can see that the average yield is higher for all blocks for the soil treated with nitrogen. For blocks 1 and 4, it is considerably higher for the soil treated with nitrogen while for the rest of them this difference is not so substantial. This suggests that nitrogen may have an effect on yield, but that the effect may depend on the block - i.e. on some other characteristics of the blocks.
+
+Taking the factor block into account is important because it allows us to control for any variation in yield that might be due to differences between the blocks (such as soil type, sunlight exposure, etc.). By comparing the average yield for each combination of nitrogen and block, we can see whether any observed differences in yield between nitrogen and no nitrogen are due to the nitrogen treatment itself, or to other factors that vary between blocks.
+
+**c)** To conduct a full two-way ANOVA with the response variable yield and the two factors block and N, we can use the aov() function in R:
+
+```{r}
+npk_anova <- aov(yield ~ block + N, data = npk)
+summary(npk_anova)
+```
+
+This shows that both block and N have a significant effect on yield, with p-values less than 0.05. The interaction between block and N is not significant, as it is not included in the output.
+
+It was sensible to include block in the model because it is a blocking factor, meaning it controls for any variation in yield that might be due to differences between the blocks. By including block in the model, we can more accurately estimate the effect of N on yield by removing the confounding effects of block-to-block variation.
+
+We cannot apply the Friedman test in this situation because the Friedman test is a non-parametric test for repeated measures data, which assumes that the observations within each group are independent and identically distributed. In this case, the yield data is not repeated measures, and the observations are not independent within each group because there are only two plots per block. As a result, the assumptions of the Friedman test are not met, and the test would not be appropriate.
+
+**d)** To investigate other possible models with all the factors combined, we can fit a model that includes all three soil additive factors (N, P, and K) and their interactions with block:
+
+```{r}
+npk_inter <- aov(yield ~ (N + P + K + N:P + N:K + P:K + block) ^ 2, data = npk)
+summary(npk_inter)
+```
+
+This model includes all main effects, pairwise interactions, and three-way interaction, as well as their interactions with block. The output shows that the main effects of N and K are significant, but not that of P or any of the interaction terms with block.
+
+We can also fit a model that only includes one interaction term of factors N, P, and K with block, and test for the presence of the main effects of N, P, and K. For example, we can fit a model with the interaction term between N and block:
+
+```{r}
+npk_int_N_block <- aov(yield ~ N*block + P + K, data = npk)
+summary(npk_int_N_block)
+```
+
+This model includes the interaction term between N and block, and the main effects of P and K. The output shows that the main effect of N, block and k are significant, while the interaction of N and block and the main effect of P are not.
+
+Based on these results, we prefer the second model. This model captures the effect of N on yield while accounting for the variation between blocks, and also includes the effects of P and K. Additionally, this model has the advantage of being relatively simple and interpretable.
+
+**e)** To perform a mixed effects analysis, we can use the lmer() function from the lme4 package in R. We can model block as a random effect to account for the variation between blocks.
+
+The output shows that the fixed effect of N is significant (p = 0.024). The random effect of block has a variance of 13.72, which indicates that there is significant variation in yield between blocks. The ICC (intra-class correlation coefficient) can be calculated as the ratio of the random effect variance to the sum of the fixed and random effect variances: 13.72 / (13.72 + 45.42) = 0.23, indicating that about 23% of the total variance in yield is due to differences between blocks.
+
+Comparing these results to the fixed effects model in part c), we can see that both models find a significant effect of N on yield. However, the mixed effects model accounts for the variation between blocks by modeling block as a random effect, which is a more appropriate way to model the design of the experiment. Additionally, the mixed effects model allows us to estimate the variance due to block, and to calculate the ICC, which gives us a measure of how much of the total variation in yield is due to differences between blocks. Therefore, the mixed effects model is more appropriate for analyzing this data set.
